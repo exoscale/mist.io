@@ -8,6 +8,7 @@ import base64
 import requests
 import subprocess
 import re
+import calendar
 from time import sleep, time
 from datetime import datetime
 from hashlib import sha256
@@ -1598,6 +1599,21 @@ def list_machines(user, cloud_id):
                    'public_ips': m.public_ips,
                    'tags': tags,
                    'extra': m.extra}
+
+        machine_price = machine_price_calculator(m)
+        indicative_price_per_month = machine_price.get('indicative_price_per_month')
+        if machine_price.get('indicative_price_per_month'):
+            machine['indicative_price_per_month'] = indicative_price_per_month
+        indicative_price_per_hour = machine_price.get('indicative_price_per_hour')
+        if machine_price.get('indicative_price_per_hour'):
+            machine['indicative_price_per_hour'] = indicative_price_per_hour
+
+        # ALLOW to override this, if user wants to add a special tag
+        # if tags.get('indicative_price_per_month'):
+        #     machine['indicative_price_per_month'] = tags.get('indicative_price_per_month')
+        # if tags.get('indicative_price_per_hour'):
+        #     machine['indicative_price_per_hour'] = tags.get('indicative_price_per_hour')
+
         machine.update(get_machine_actions(m, conn, m.extra))
         ret.append(machine)
     if conn.type == 'libvirt':
@@ -4349,6 +4365,38 @@ def get_deploy_collectd_command_coreos(uuid, password, monitor):
            "-e COLLECTD_USERNAME=%s " \
            "-e COLLECTD_PASSWORD=%s " \
            "-e MONITOR_SERVER=%s mist/collectd" % (uuid, password, monitor)
+
+
+def machine_price_calculator(m):
+    """
+    Calculates and returns the price for a VM
+    Since there is not a straightforward way to get this, we'll be provider specific
+
+    Supported providers:
+    Packet.net
+
+    TODO - supported by mist.io pricing:  DigitalOcean, RackSpace, ec2, gce, NephoScale
+
+    Research: Azure, Linode, Softlayer, Hostvirtual, Vultr
+
+    """
+    price = {}
+    # FIXMEFIXMEFIXME: get values from memcache
+    sizes = m.driver.list_sizes()
+    if m.driver.type == 'packet':
+        # Packet.net returns a price per hour
+        size = m.extra.get('plan')
+        if size:
+            for plan_size in sizes:
+                try:
+                    if plan_size.name.startswith(size):
+                        plan_price = plan_size.price.split(' ')[0]
+                        price['indicative_price_per_hour'] = plan_price
+                        now = datetime.now()
+                        price['indicative_price_per_month'] = float(plan_price) * 24 * calendar.monthrange(now.year, now.month)[1]
+                except:
+                    price = {}}
+    return price
 
 
 def machine_name_validator(provider, name):
