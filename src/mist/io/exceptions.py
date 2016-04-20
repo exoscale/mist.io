@@ -184,3 +184,7 @@ class CloudUnavailableError(ServiceUnavailableError):
 
 class MachineUnavailableError(ServiceUnavailableError):
     msg = "Machine currently unavailable"
+
+
+class VpnTunnelError(InternalServerError):
+    msg = "Virtual interface unresponsive"

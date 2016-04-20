@@ -38,6 +38,10 @@ GOOGLE_ANALYTICS_ID = settings.get("GOOGLE_ANALYTICS_ID", "")
 COMMAND_TIMEOUT = settings.get("COMMAND_TIMEOUT", 20)
 ALLOW_CONNECT_LOCALHOST = settings.get('ALLOW_CONNECT_LOCALHOST', True)
 ALLOW_CONNECT_PRIVATE = settings.get('ALLOW_CONNECT_PRIVATE', True)
+# private networks mist.io can connect to
+NETWORK_CONNECT_PRIVATE = settings.get('NETWORK_CONNECT_PRIVATE', '')
+VPN_SERVER_API_ADDRESS = settings.get('VPN_SERVER_API_ADDRESS', '')
+VPN_SERVER_PUBLIC_ADDRESS = settings.get('VPN_SERVER_PUBLIC_ADDRESS', '')
 # allow mist.io to connect to KVM hypervisor running on the same server
 ALLOW_LIBVIRT_LOCALHOST = settings.get('ALLOW_LIBVIRT_LOCALHOST', False)
 

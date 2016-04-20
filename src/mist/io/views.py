@@ -41,6 +41,8 @@ from mist.io.helpers import trigger_session_update, transform_key_machine_associ
 
 from mist.core.auth.methods import auth_context_from_request
 
+import mist.core.vpn.methods
+
 import logging
 logging.basicConfig(level=config.PY_LOG_LEVEL,
                     format=config.PY_LOG_FORMAT,
@@ -416,6 +418,22 @@ def toggle_cloud(request):
     cloud.save()
     trigger_session_update(auth_context.owner, ['clouds'])
     return OK
+
+
+@view_config(route_name='add_tunnel', request_method='GET', renderer='json')
+def add_vpn_tunnel(request):
+    """
+    This API endpoint is responsible for private CIDR validation,
+    requesting a new VPN tunnel, and for returning the OpenVPN
+    client configuration script.
+    """
+    params = params_from_request(request)
+    # TODO: permissions
+    #auth_context = auth_context_from_request(request)
+    #owner = auth_context.owner
+    tunnel_name, cidr, client_script = \
+        mist.core.vpn.methods.vpn_client_script(params)
+    return tunnel_name, cidr, client_script
 
 
 @view_config(route_name='api_v1_keys', request_method='GET', renderer='json')

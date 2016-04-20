@@ -369,6 +369,17 @@ def check_host(host, allow_localhost=config.ALLOW_CONNECT_LOCALHOST,
                                           forbidden_subnets[str(cidr)]))
 
 
+# check whether host belongs to a private network
+def check_private_host(dst):
+    from mist.io.config import NETWORK_CONNECT_PRIVATE
+    for cidr in NETWORK_CONNECT_PRIVATE:
+        if netaddr.IPAddress(str(dst)) in netaddr.IPNetwork(str(cidr)):
+            return cidr
+        else:
+            continue
+    return False
+
+
 def transform_key_machine_associations(machines, keypair):
     key_associations = []
     for machine in machines:

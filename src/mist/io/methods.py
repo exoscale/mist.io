@@ -9,7 +9,7 @@ import requests
 import subprocess
 import re
 import mongoengine as me
-from mongoengine import ValidationError, NotUniqueError
+from mongoengine import ValidationError, NotUniqueError, DoesNotExist
 from time import sleep, time
 from datetime import datetime
 from hashlib import sha256
@@ -39,8 +39,11 @@ import ansible.constants
 # try:
 # from mist.core.user.models import User
 from mist.core.cloud.models import Cloud, Machine, KeyAssociation
+from mist.core.vpn.methods import add_priv_bare_metal
 from mist.core.keypair.models import Keypair
+from mist.core.vpn.models import Tunnels
 from mist.core import config
+from mist.io.config import VPN_SERVER_API_ADDRESS
 # except ImportError:
 #     print "Seems to be on IO version"
 #     from mist.io import config, model
@@ -291,7 +294,7 @@ def add_cloud_v_2(user, title, provider, params):
             except Exception as exc:
                 log.error("Error while adding cloud%r" % exc)
                 raise CloudUnavailableError(exc)
-            if provider not in ['vshere']:
+            if provider not in ['vsphere']:
                 # in some providers -eg vSphere- this is not needed
                 # as we are sure we got a succesfull connection with
                 # the provider if connect_provider doesn't fail
@@ -354,14 +357,28 @@ def _add_cloud_bare_metal(user, title, provider, params):
         if not machine_user:
             machine_user = 'root'
 
-    cloud = Cloud()
-    cloud.title = title
-    cloud.provider = provider
-    cloud.enabled = True
-    cloud.owner = user
+    if is_private_subnet(sanitize_host(machine_hostname)):
+        tunnel_name = params.get('tunnel_name', '')
+        if not tunnel_name:
+            raise RequiredParameterMissingError('Private cloud detected: a '
+                                                'VPN tunnel must be specified '
+                                                'in order to proceed')
+        cloud, machine_hostname, port, rdp_port = \
+            add_priv_bare_metal(user, title, provider, machine_hostname,
+                                tunnel_name, os_type, port, rdp_port)
+    else:
+        cloud = Cloud()
+        cloud.title = title
+        cloud.provider = provider
+        cloud.enabled = True
+        cloud.owner = user
 
     try:
         cloud.save()
+        if cloud.is_private and cloud.vpn_confirmed:
+            tunnel = Tunnels.objects.get(tunnel_name=cloud.tunnel_name)
+            tunnel.clouds.append(cloud)
+            tunnel.save()
     except ValidationError as e:
         raise BadRequestError({"msg": e.message, "errors": e.to_dict()})
     except NotUniqueError:
@@ -369,7 +386,10 @@ def _add_cloud_bare_metal(user, title, provider, params):
 
     machine = Machine()
     machine.cloud = cloud
-    machine_hostname = sanitize_host(machine_hostname)
+    if machine.cloud.is_private:
+        machine.is_private = True
+    else:
+        machine_hostname = sanitize_host(machine_hostname)
     machine.ssh_port = port
     machine.remote_desktop_port = rdp_port
     if machine_hostname:
@@ -1806,7 +1826,6 @@ def create_machine(user, cloud_id, key_id, machine_name, location_id,
            'private_ips': node.private_ips,
            'job_id': job_id,
            }
-
     return ret
 
 
