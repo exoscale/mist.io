@@ -375,10 +375,8 @@ def _add_cloud_bare_metal(user, title, provider, params):
 
     try:
         cloud.save()
-        if cloud.is_private and cloud.vpn_confirmed:
-            tunnel = Tunnels.objects.get(tunnel_name=cloud.tunnel_name)
-            tunnel.clouds.append(cloud)
-            tunnel.save()
+        if cloud.is_private and Tunnels.objects(name=cloud.tunnel_name).confirmed:
+            Tunnels.objects(tunnel_name=cloud.tunnel_name).update(push__clouds=cloud)
     except ValidationError as e:
         raise BadRequestError({"msg": e.message, "errors": e.to_dict()})
     except NotUniqueError:
@@ -388,6 +386,7 @@ def _add_cloud_bare_metal(user, title, provider, params):
     machine.cloud = cloud
     if machine.cloud.is_private:
         machine.is_private = True
+        machine.real_hostname = cloud.real_hostname
     else:
         machine_hostname = sanitize_host(machine_hostname)
     machine.ssh_port = port

@@ -431,9 +431,12 @@ def add_vpn_tunnel(request):
     # TODO: permissions
     #auth_context = auth_context_from_request(request)
     #owner = auth_context.owner
-    tunnel_name, cidr, client_script = \
+    tunnel_name, private_cidr, client_script = \
         mist.core.vpn.methods.vpn_client_script(params)
-    return tunnel_name, cidr, client_script
+    return {'tunnel_name': tunnel_name,
+            'private_cidr': private_cidr,
+            'client_script': client_script
+            }
 
 
 @view_config(route_name='api_v1_keys', request_method='GET', renderer='json')
