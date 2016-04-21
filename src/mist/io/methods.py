@@ -410,6 +410,7 @@ def _add_cloud_bare_metal(user, title, provider, params):
                 port=port
             )
         except MachineUnauthorizedError as exc:
+            Cloud.objects.get(owner=user, id=cloud.id).delete()
             raise CloudUnauthorizedError(exc)
         except ServiceUnavailableError as exc:
             raise MistError("Couldn't connect to host '%s'."
@@ -482,6 +483,7 @@ def _add_cloud_coreos(user, title, provider, params):
                 port=port
             )
         except MachineUnauthorizedError as exc:
+            Cloud.objects.get(owner=user, id=cloud.id).delete()
             raise CloudUnauthorizedError(exc)
         except ServiceUnavailableError as exc:
             raise MistError("Couldn't connect to host '%s'."
