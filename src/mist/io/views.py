@@ -429,8 +429,11 @@ def add_vpn_tunnel(request):
     """
     params = params_from_request(request)
     # TODO: permissions
-    #auth_context = auth_context_from_request(request)
-    #owner = auth_context.owner
+    # auth_context = auth_context_from_request(request)
+    # owner = auth_context.owner
+    # tunnel_tags = auth_context.get_tags("tunnel", "add")
+    # if tunnel_tags is None:
+    #    raise UnauthorizedError()
     tunnel_name, private_cidr, client_script = \
         mist.core.vpn.methods.vpn_client_script(params)
     return {'tunnel_name': tunnel_name,

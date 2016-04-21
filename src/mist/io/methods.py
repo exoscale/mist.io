@@ -358,6 +358,7 @@ def _add_cloud_bare_metal(user, title, provider, params):
             machine_user = 'root'
 
     if is_private_subnet(sanitize_host(machine_hostname)):
+        machine_hostname = sanitize_host(machine_hostname)
         tunnel_name = params.get('tunnel_name', '')
         if not tunnel_name:
             raise RequiredParameterMissingError('Private cloud detected: a '
@@ -449,20 +450,35 @@ def _add_cloud_coreos(user, title, provider, params):
         if not machine_user:
             machine_user = 'root'
 
-    cloud = Cloud()
-    cloud.title = title
-    cloud.provider = provider
-    cloud.enabled = True
-    cloud.owner = user
+    if is_private_subnet(machine_hostname):
+        tunnel_name = params.get('tunnel_name', '')
+        if not tunnel_name:
+            raise RequiredParameterMissingError('Private cloud detected: a '
+                                                'VPN tunnel must be specified '
+                                                'in order to proceed')
+        cloud, machine_hostname, port = \
+            add_priv_bare_metal(user, title, provider, machine_hostname,
+                                tunnel_name, os_type, port)
+    else:
+        cloud = Cloud()
+        cloud.title = title
+        cloud.provider = provider
+        cloud.enabled = True
+        cloud.owner = user
 
     try:
         cloud.save()
+        if cloud.is_private and Tunnels.objects(name=cloud.tunnel_name).confirmed:
+            Tunnels.objects(tunnel_name=cloud.tunnel_name).update(push__clouds=cloud)
     except ValidationError as e:
         raise BadRequestError({"msg": e.message, "errors": e.to_dict()})
     except NotUniqueError:
         raise CloudExistsError()
 
     machine = Machine()
+    if machine.cloud.is_private:
+        machine.is_private = True
+        machine.real_hostname = cloud.real_hostname
     machine.ssh_port = port
     if machine_hostname:
         machine.dns_name = machine_hostname
