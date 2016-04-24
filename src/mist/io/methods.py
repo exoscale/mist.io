@@ -851,19 +851,32 @@ def _add_cloud_libvirt(user, title, provider, params):
     except:
         port = 22
 
-    cloud = Cloud()
-    cloud.title = title
-    cloud.provider = provider
-    cloud.apikey = apikey
-    cloud.apisecret = apisecret
-    cloud.apiurl = machine_hostname
-    cloud.enabled = True
-    cloud.ssh_port = port
-    cloud.images_location = images_location
-    cloud.owner = user
+    if is_private_subnet(machine_hostname):
+        tunnel_name = params.get('tunnel_name', '')
+        if not tunnel_name:
+            raise RequiredParameterMissingError('Private cloud detected: a '
+                                                'VPN tunnel must be specified '
+                                                'in order to proceed')
+        cloud = add_priv_bare_metal(user, title, provider, machine_hostname,
+                                    apikey, apisecret, port, tunnel_name,
+                                    images_location)
+    else:
+        cloud = Cloud()
+        cloud.title = title
+        cloud.provider = provider
+        cloud.apikey = apikey
+        cloud.apisecret = apisecret
+        cloud.apiurl = machine_hostname
+        cloud.enabled = True
+        cloud.ssh_port = port
+        cloud.images_location = images_location
+        cloud.owner = user
 
     try:
         cloud.save()
+        if cloud.is_private and Tunnels.objects(name=cloud.tunnel_name).confirmed:
+            # FIXME: avoid duplicates
+            Tunnels.objects(tunnel_name=cloud.tunnel_name).update(push__clouds=cloud)
     except ValidationError as e:
         raise BadRequestError({"msg": e.message, "errors": e.to_dict()})
     except NotUniqueError:
