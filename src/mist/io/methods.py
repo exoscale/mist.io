@@ -39,7 +39,7 @@ import ansible.constants
 # try:
 # from mist.core.user.models import User
 from mist.core.cloud.models import Cloud, Machine, KeyAssociation
-from mist.core.vpn.methods import add_priv_bare_metal
+from mist.core.vpn.methods import add_priv_bare_metal, add_priv_vmware_cloud
 from mist.core.keypair.models import Keypair
 from mist.core.vpn.models import Tunnels
 from mist.core import config
@@ -538,21 +538,33 @@ def _add_cloud_vcloud(user, title, provider, params):
             raise RequiredParameterMissingError('host')
         host = sanitize_host(host)
     elif provider == 'indonesian_vcloud':
-        host = params.get('indonesianRegion','my.idcloudonline.com')
+        host = params.get('indonesianRegion', 'my.idcloudonline.com')
         if host not in ['my.idcloudonline.com', 'compute.idcloudonline.com']:
             host = 'my.idcloudonline.com'
 
-    cloud = Cloud()
-    cloud.title = title
-    cloud.provider = provider
-    cloud.apikey = username
-    cloud.apisecret = password
-    cloud.apiurl = host
-    cloud.enabled = True
-    cloud.owner = user
+    if provider == 'vcloud' and is_private_subnet(host):
+        tunnel_name = params.get('tunnel_name', '')
+        if not tunnel_name:
+            raise RequiredParameterMissingError('Private cloud detected: a '
+                                                'VPN tunnel must be specified '
+                                                'in order to proceed')
+        cloud = add_priv_vmware_cloud(user, title, provider, host, username,
+                                      password, tunnel_name)
+    else:
+        cloud = Cloud()
+        cloud.title = title
+        cloud.provider = provider
+        cloud.apikey = username
+        cloud.apisecret = password
+        cloud.apiurl = host
+        cloud.enabled = True
+        cloud.owner = user
 
     try:
         cloud.save()
+        if cloud.is_private and Tunnels.objects(name=cloud.tunnel_name).confirmed:
+            # FIXME: avoid duplicates
+            Tunnels.objects(tunnel_name=cloud.tunnel_name).update(push__clouds=cloud)
     except ValidationError as e:
         raise BadRequestError({"msg": e.message, "errors": e.to_dict()})
     except NotUniqueError:
@@ -998,17 +1010,29 @@ def _add_cloud_vsphere(user, title, provider, params):
         raise RequiredParameterMissingError('host')
     host = sanitize_host(host)
 
-    cloud = Cloud()
-    cloud.title = title
-    cloud.provider = provider
-    cloud.apikey = username
-    cloud.apisecret = password
-    cloud.apiurl = host
-    cloud.enabled = True
-    cloud.owner = user
+    if is_private_subnet(host):
+        tunnel_name = params.get('tunnel_name', '')
+        if not tunnel_name:
+            raise RequiredParameterMissingError('Private cloud detected: a '
+                                                'VPN tunnel must be specified '
+                                                'in order to proceed')
+        cloud = add_priv_vmware_cloud(user, title, provider, host, username,
+                                      password, tunnel_name)
+    else:
+        cloud = Cloud()
+        cloud.title = title
+        cloud.provider = provider
+        cloud.apikey = username
+        cloud.apisecret = password
+        cloud.apiurl = host
+        cloud.enabled = True
+        cloud.owner = user
 
     try:
         cloud.save()
+        if cloud.is_private and Tunnels.objects(name=cloud.tunnel_name).confirmed:
+            # FIXME: avoid duplicates
+            Tunnels.objects(tunnel_name=cloud.tunnel_name).update(push__clouds=cloud)
     except ValidationError as e:
         raise BadRequestError({"msg": e.message, "errors": e.to_dict()})
     except NotUniqueError:
