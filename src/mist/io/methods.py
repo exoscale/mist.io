@@ -40,6 +40,8 @@ import ansible.constants
 # from mist.core.user.models import User
 from mist.core.cloud.models import Cloud, Machine, KeyAssociation
 from mist.core.vpn.methods import add_priv_bare_metal, add_priv_vmware_cloud
+from mist.core.vpn.methods import add_priv_libvirt_cloud, add_priv_docker_cloud
+from mist.core.vpn.methods import add_priv_openstack_cloud
 from mist.core.keypair.models import Keypair
 from mist.core.vpn.models import Tunnels
 from mist.core import config
@@ -809,21 +811,35 @@ def _add_cloud_docker(user, title, provider, params):
     cert_file = params.get('cert_file', '')
     ca_cert_file = params.get('ca_cert_file', '')
 
-    cloud = Cloud()
-    cloud.title = title
-    cloud.provider = provider
-    cloud.docker_port = docker_port
-    cloud.apikey = auth_user
-    cloud.key_file = key_file
-    cloud.cert_file = cert_file
-    cloud.ca_cert_file = ca_cert_file
-    cloud.apisecret = auth_password
-    cloud.apiurl = docker_host
-    cloud.enabled = True
-    cloud.owner = user
+    if is_private_subnet(docker_host):
+        tunnel_name = params.get('tunnel_name', '')
+        if not tunnel_name:
+            raise RequiredParameterMissingError('Private cloud detected: a '
+                                                'VPN tunnel must be specified '
+                                                'in order to proceed')
+        cloud = add_priv_docker_cloud(user, title, provider, docker_host,
+                                      docker_port, auth_user, auth_password,
+                                      key_file, cert_file, ca_cert_file,
+                                      tunnel_name)
+    else:
+        cloud = Cloud()
+        cloud.title = title
+        cloud.provider = provider
+        cloud.docker_port = docker_port
+        cloud.apikey = auth_user
+        cloud.key_file = key_file
+        cloud.cert_file = cert_file
+        cloud.ca_cert_file = ca_cert_file
+        cloud.apisecret = auth_password
+        cloud.apiurl = docker_host
+        cloud.enabled = True
+        cloud.owner = user
 
     try:
         cloud.save()
+        if cloud.is_private and Tunnels.objects(name=cloud.tunnel_name).confirmed:
+            # FIXME: avoid duplicates
+            Tunnels.objects(tunnel_name=cloud.tunnel_name).update(push__clouds=cloud)
     except ValidationError as e:
         raise BadRequestError({"msg": e.message, "errors": e.to_dict()})
     except NotUniqueError:
@@ -857,9 +873,9 @@ def _add_cloud_libvirt(user, title, provider, params):
             raise RequiredParameterMissingError('Private cloud detected: a '
                                                 'VPN tunnel must be specified '
                                                 'in order to proceed')
-        cloud = add_priv_bare_metal(user, title, provider, machine_hostname,
-                                    apikey, apisecret, port, tunnel_name,
-                                    images_location)
+        cloud = add_priv_libvirt_cloud(user, title, provider, machine_hostname,
+                                       apikey, apisecret, port, tunnel_name,
+                                       images_location)
     else:
         cloud = Cloud()
         cloud.title = title
@@ -912,21 +928,37 @@ def _add_cloud_openstack(user, title, provider, params):
     region = params.get('region', '')
     compute_endpoint = params.get('compute_endpoint', '')
 
-
-    cloud = Cloud()
-    cloud.title = title
-    cloud.provider = provider
-    cloud.apikey = username
-    cloud.apisecret = password
-    cloud.apiurl = auth_url
-    cloud.tenant_name = tenant_name
-    cloud.region = region
-    cloud.compute_endpoint = compute_endpoint
-    cloud.enabled = True
-    cloud.owner = user
+    if auth_url.startswith('http'):
+        sanitized_auth_url = (auth_url.split(':')[1]).lstrip('//')
+    else:
+        sanitized_auth_url = auth_url.split(':')[0]
+    if is_private_subnet(sanitized_auth_url):
+        tunnel_name = params.get('tunnel_name', '')
+        if not tunnel_name:
+            raise RequiredParameterMissingError('Private cloud detected: a '
+                                                'VPN tunnel must be specified '
+                                                'in order to proceed')
+        cloud = add_priv_openstack_cloud(user, title, provider, username,
+                                         password, auth_url, tenant_name,
+                                         region, compute_endpoint, tunnel_name)
+    else:
+        cloud = Cloud()
+        cloud.title = title
+        cloud.provider = provider
+        cloud.apikey = username
+        cloud.apisecret = password
+        cloud.apiurl = auth_url
+        cloud.tenant_name = tenant_name
+        cloud.region = region
+        cloud.compute_endpoint = compute_endpoint
+        cloud.enabled = True
+        cloud.owner = user
 
     try:
         cloud.save()
+        if cloud.is_private and Tunnels.objects(name=cloud.tunnel_name).confirmed:
+            # FIXME: avoid duplicates
+            Tunnels.objects(tunnel_name=cloud.tunnel_name).update(push__clouds=cloud)
     except ValidationError as e:
         raise BadRequestError({"msg": e.message, "errors": e.to_dict()})
     except NotUniqueError:
