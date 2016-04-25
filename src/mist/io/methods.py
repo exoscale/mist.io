@@ -2675,7 +2675,8 @@ def _machine_action(user, cloud_id, machine_id, action, plan_id=None, name=None)
                     hostname = machine.public_ips[0]
                     port = machine.ssh_port
                     command = '$(command -v sudo) shutdown -r now'
-                    ssh_command(user, cloud_id, machine_id, hostname, command, port)
+                    ssh_command(user, cloud_id, machine_id,
+                                hostname, command, port=port)
                     return True
                 except:
                     return False
@@ -2700,7 +2701,7 @@ def _machine_action(user, cloud_id, machine_id, action, plan_id=None, name=None)
                                 port = 22
                             command = '$(command -v sudo) shutdown -r now'
                             ssh_command(user, cloud_id, machine_id,
-                                        hostname, command, port)
+                                        hostname, command, port=port)
                             return True
                         except:
                             return False
