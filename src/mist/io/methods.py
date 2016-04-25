@@ -358,9 +358,9 @@ def _add_cloud_bare_metal(user, title, provider, params):
                                   "hostname is empty.")
         if not machine_user:
             machine_user = 'root'
+    machine_hostname = sanitize_host(machine_hostname)
 
-    if is_private_subnet(sanitize_host(machine_hostname)):
-        machine_hostname = sanitize_host(machine_hostname)
+    if is_private_subnet(machine_hostname):
         tunnel_name = params.get('tunnel_name', '')
         if not tunnel_name:
             raise RequiredParameterMissingError('Private cloud detected: a '
@@ -387,16 +387,13 @@ def _add_cloud_bare_metal(user, title, provider, params):
 
     machine = Machine()
     machine.cloud = cloud
-    if machine.cloud.is_private:
-        machine.is_private = True
-        machine.real_hostname = cloud.real_hostname
-    else:
-        machine_hostname = sanitize_host(machine_hostname)
     machine.ssh_port = port
     machine.remote_desktop_port = rdp_port
     if machine_hostname:
         machine.dns_name = machine_hostname
         machine.public_ips = [machine_hostname]
+        if machine.cloud.is_private:
+            machine.private_ips = [cloud.real_hostname]
     machine.machine_id = title.replace('.', '').replace(' ', '')
     machine.name = title
     machine.os_type = os_type
@@ -478,17 +475,16 @@ def _add_cloud_coreos(user, title, provider, params):
         raise CloudExistsError()
 
     machine = Machine()
-    if machine.cloud.is_private:
-        machine.is_private = True
-        machine.real_hostname = cloud.real_hostname
+    machine.cloud = cloud
     machine.ssh_port = port
     if machine_hostname:
         machine.dns_name = machine_hostname
         machine.public_ips = [machine_hostname]
+        if machine.cloud.is_private:
+            machine.private_ips = [cloud.real_hostname]
     machine.machine_id = machine_hostname.replace('.', '').replace(' ', '')
     machine.name = title
     machine.os_type = os_type
-    machine.cloud = cloud
     machine.save()
     # try to connect. this will either fail and we'll delete the
     # cloud, or it will work and it will create the association
@@ -928,11 +924,7 @@ def _add_cloud_openstack(user, title, provider, params):
     region = params.get('region', '')
     compute_endpoint = params.get('compute_endpoint', '')
 
-    if auth_url.startswith('http'):
-        sanitized_auth_url = (auth_url.split(':')[1]).lstrip('//')
-    else:
-        sanitized_auth_url = auth_url.split(':')[0]
-    if is_private_subnet(sanitized_auth_url):
+    if is_private_subnet(sanitize_host(auth_url)):
         tunnel_name = params.get('tunnel_name', '')
         if not tunnel_name:
             raise RequiredParameterMissingError('Private cloud detected: a '
@@ -2640,8 +2632,18 @@ def _machine_action(user, cloud_id, machine_id, action, plan_id=None, name=None)
                 except KeyError:
                     port = 22
 
-                machine = Machine.objects.get(cloud=cloud,
-                                              machine_id=machine_id)
+                if cloud.is_private:
+                    # TODO: check if already exists
+                    url = VPN_SERVER_API_ADDRESS + '%d/forwardings/%s/%d/'
+                    # private_ips extracted from `node`
+                    ssh_port = requests.get(url % (cloud.tunnel_id,
+                                                   machine.private_ips[0], 22))
+                    if ssh_port.status_code != requests.codes.ok:
+                        raise VpnTunnelError()
+                    port = int(ssh_port.text)
+
+                # TODO: should be in try-except?
+                machine = Machine.objects.get(cloud=cloud, machine_id=machine_id)
                 for key_assoc in machine.key_associations:
                     key_assoc.port = port
                 machine.save()
@@ -2669,20 +2671,36 @@ def _machine_action(user, cloud_id, machine_id, action, plan_id=None, name=None)
         elif action is 'reboot':
             if bare_metal:
                 try:
-                    hostname = Machine.objects.get(cloud=cloud, machine_id=machine_id).public_ips[0]
+                    machine = Machine.objects.get(cloud=cloud, machine_id=machine_id)
+                    hostname = machine.public_ips[0]
+                    port = machine.ssh_port
                     command = '$(command -v sudo) shutdown -r now'
-                    ssh_command(user, cloud_id, machine_id, hostname, command)
+                    ssh_command(user, cloud_id, machine_id, hostname, command, port)
                     return True
                 except:
                     return False
             else:
                 if conn.type == 'libvirt':
                     if machine.extra.get('tags', {}).get('type', None) == 'hypervisor':
-                         # issue an ssh command for the libvirt hypervisor
+                        # issue an ssh command for the libvirt hypervisor
                         try:
-                            hostname = machine.public_ips[0]
+                            if cloud.is_private:
+                                hostname = VPN_SERVER_API_ADDRESS
+                                # TODO: check if already exists
+                                url = VPN_SERVER_API_ADDRESS + '%d/forwardings/%s/%d/'
+                                # private_ips extracted from `node`
+                                ssh_port = requests.get(url % (cloud.tunnel_id,
+                                                               machine.private_ips[0],
+                                                               22))
+                                if ssh_port.status_code != requests.codes.ok:
+                                    raise VpnTunnelError()
+                                port = int(ssh_port.text)
+                            else:
+                                hostname = machine.public_ips[0]
+                                port = 22
                             command = '$(command -v sudo) shutdown -r now'
-                            ssh_command(user, cloud_id, machine_id, hostname, command)
+                            ssh_command(user, cloud_id, machine_id,
+                                        hostname, command, port)
                             return True
                         except:
                             return False
@@ -2701,8 +2719,17 @@ def _machine_action(user, cloud_id, machine_id, action, plan_id=None, name=None)
                         port = node_info.extra['network_settings']['Ports']['22/tcp'][0]['HostPort']
                     except KeyError:
                         port = 22
-                    machine = Machine.objects.get(cloud=cloud,
-                                                  machine_id=machine_id)
+
+                    if cloud.is_private:
+                        url = VPN_SERVER_API_ADDRESS + '%d/forwardings/%s/%d/'
+                        ssh_port = requests.get(url % (cloud.tunnel_id,
+                                                       machine.private_ips[0],
+                                                       22))
+                        if ssh_port.status_code != requests.codes.ok:
+                            raise VpnTunnelError()
+                        port = int(ssh_port.text)
+
+                    machine = Machine.objects.get(cloud=cloud, machine_id=machine_id)
                     for key_assoc in machine.key_associations:
                         key_assoc.port = port
                     machine.save()
