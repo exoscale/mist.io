@@ -3779,7 +3779,7 @@ def probe(user, cloud_id, machine_id, host, key_id='', ssh_user=''):
         raise RequiredParameterMissingError('host')
 
     # start pinging the machine in the background
-    # FIXME: improve this
+    # FIXME: improve this; is `host` a private IP address?
     cloud = Cloud.objects.get(owner=user, id=cloud_id)
     if cloud.is_private:
         url = VPN_SERVER_API_ADDRESS + '%d/ping/%s/'
@@ -3793,7 +3793,7 @@ def probe(user, cloud_id, machine_id, host, key_id='', ssh_user=''):
             port = machine.ssh_port
         else:
             url = VPN_SERVER_API_ADDRESS + '%d/forwardings/%s/%d'
-            port = requests.get(url% (tunnel, host, 22)).text
+            port = requests.get(url % (tunnel, host, 22)).text
     else:
         log.info("Starting ping in the background for host %s", host)
         ping = subprocess.Popen(["ping", "-c", "10", "-i", "0.4", "-W", "1",
@@ -3885,6 +3885,7 @@ def probe_ssh_only(user, cloud_id, machine_id, host, port, key_id='',
     }
 
 
+# TODO
 def ping(host):
     ping = subprocess.Popen(
         ["ping", "-c", "10", "-i", "0.4", "-W", "1", "-q", host],
