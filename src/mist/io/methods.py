@@ -2642,11 +2642,15 @@ def _machine_action(user, cloud_id, machine_id, action, plan_id=None, name=None)
                         raise VpnTunnelError()
                     port = int(ssh_port.text)
 
-                # TODO: should be in try-except?
-                machine = Machine.objects.get(cloud=cloud, machine_id=machine_id)
-                for key_assoc in machine.key_associations:
-                    key_assoc.port = port
-                machine.save()
+                try:
+                    machine = Machine.objects.get(cloud=cloud,
+                                                  machine_id=machine_id)
+                except DoesNotExist:
+                    pass
+                else:
+                    for key_assoc in machine.key_associations:
+                        key_assoc.port = port
+                        machine.save()
         elif action is 'stop':
             # In libcloud it is not possible to call this with machine.stop()
             if conn.type == 'azure':
@@ -2730,11 +2734,15 @@ def _machine_action(user, cloud_id, machine_id, action, plan_id=None, name=None)
                             raise VpnTunnelError()
                         port = int(ssh_port.text)
 
-                    machine = Machine.objects.get(cloud=cloud, machine_id=machine_id)
-                    for key_assoc in machine.key_associations:
-                        key_assoc.port = port
-                    machine.save()
-
+                    try:
+                        machine = Machine.objects.get(cloud=cloud,
+                                                      machine_id=machine_id)
+                    except DoesNotExist:
+                        pass
+                    else:
+                        for key_assoc in machine.key_associations:
+                            key_assoc.port = port
+                            machine.save()
         elif action is 'destroy':
             if conn.type is Provider.DOCKER and node.state == 0:
                 conn.ex_stop_node(node)
