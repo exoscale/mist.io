@@ -2632,22 +2632,23 @@ def _machine_action(user, cloud_id, machine_id, action, plan_id=None, name=None)
                 except KeyError:
                     port = 22
 
-                if cloud.is_private:
-                    # TODO: check if already exists
-                    url = VPN_SERVER_API_ADDRESS + '%d/forwardings/%s/%d/'
-                    # private_ips extracted from `node`
-                    ssh_port = requests.get(url % (cloud.tunnel_id,
-                                                   machine.private_ips[0], 22))
-                    if ssh_port.status_code != requests.codes.ok:
-                        raise VpnTunnelError()
-                    port = int(ssh_port.text)
-
                 try:
                     machine = Machine.objects.get(cloud=cloud,
                                                   machine_id=machine_id)
                 except DoesNotExist:
                     pass
                 else:
+                    if cloud.is_private:
+                        url = VPN_SERVER_API_ADDRESS + '%d/forwardings/%s/%d/'
+                        # private_ips extracted from `node`
+                        ssh_port = requests.get(url % (cloud.tunnel_id,
+                                                       machine.private_ips[0],
+                                                       port))
+                        if ssh_port.status_code != requests.codes.ok:
+                            pass
+                            # FIXME: present port may still work?
+                            # raise VpnTunnelError()
+                        port = int(ssh_port.text)
                     for key_assoc in machine.key_associations:
                         key_assoc.port = port
                         machine.save()
@@ -2690,15 +2691,16 @@ def _machine_action(user, cloud_id, machine_id, action, plan_id=None, name=None)
                         # issue an ssh command for the libvirt hypervisor
                         try:
                             if cloud.is_private:
-                                hostname = VPN_SERVER_API_ADDRESS
-                                # TODO: check if already exists
                                 url = VPN_SERVER_API_ADDRESS + '%d/forwardings/%s/%d/'
                                 # private_ips extracted from `node`
                                 ssh_port = requests.get(url % (cloud.tunnel_id,
                                                                machine.private_ips[0],
                                                                22))
                                 if ssh_port.status_code != requests.codes.ok:
-                                    raise VpnTunnelError()
+                                    pass
+                                    # FIXME: present port may still work?
+                                    # raise VpnTunnelError()
+                                hostname = VPN_SERVER_API_ADDRESS
                                 port = int(ssh_port.text)
                             else:
                                 hostname = machine.public_ips[0]
@@ -2725,21 +2727,23 @@ def _machine_action(user, cloud_id, machine_id, action, plan_id=None, name=None)
                     except KeyError:
                         port = 22
 
-                    if cloud.is_private:
-                        url = VPN_SERVER_API_ADDRESS + '%d/forwardings/%s/%d/'
-                        ssh_port = requests.get(url % (cloud.tunnel_id,
-                                                       machine.private_ips[0],
-                                                       22))
-                        if ssh_port.status_code != requests.codes.ok:
-                            raise VpnTunnelError()
-                        port = int(ssh_port.text)
-
                     try:
                         machine = Machine.objects.get(cloud=cloud,
                                                       machine_id=machine_id)
                     except DoesNotExist:
                         pass
                     else:
+                        if cloud.is_private:
+                            url = VPN_SERVER_API_ADDRESS + '%d/forwardings/%s/%d/'
+                            # private_ips extracted from `node`
+                            ssh_port = requests.get(url % (cloud.tunnel_id,
+                                                           machine.private_ips[0],
+                                                           port))
+                            if ssh_port.status_code != requests.codes.ok:
+                                pass
+                                # FIXME: present mapping may still work?
+                                # raise VpnTunnelError()
+                            port = int(ssh_port.text)
                         for key_assoc in machine.key_associations:
                             key_assoc.port = port
                             machine.save()
