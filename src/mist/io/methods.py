@@ -3779,27 +3779,46 @@ def probe(user, cloud_id, machine_id, host, key_id='', ssh_user=''):
         raise RequiredParameterMissingError('host')
 
     # start pinging the machine in the background
-    log.info("Starting ping in the background for host %s", host)
-    ping = subprocess.Popen(
-        ["ping", "-c", "10", "-i", "0.4", "-W", "1", "-q", host],
-        stdout=subprocess.PIPE
-    )
+    # FIXME: improve this
+    cloud = Cloud.objects.get(owner=user, id=cloud_id)
+    if cloud.is_private:
+        url = VPN_SERVER_API_ADDRESS + '%d/ping/%s/'
+        tunnel = cloud.tunnel_id
+        log.info("Starting ping in the background for host %s", host)
+        ping = requests.get(url % (tunnel, host))
+        if ping.status_code != requests.codes.ok:
+            raise VpnTunnelError
+        if cloud.provider in ['bare_metal', 'coreos']:
+            machine = Machine.objects.get(cloud=cloud_id, machine_id=machine_id)
+            port = machine.ssh_port
+        else:
+            url = VPN_SERVER_API_ADDRESS + '%d/forwardings/%s/%d'
+            port = requests.get(url% (tunnel, host, 22)).text
+    else:
+        log.info("Starting ping in the background for host %s", host)
+        ping = subprocess.Popen(["ping", "-c", "10", "-i", "0.4", "-W", "1",
+                                 "-q", host], stdout=subprocess.PIPE)
+        port = 22
     try:
-        ret = probe_ssh_only(user, cloud_id, machine_id, host,
+        ret = probe_ssh_only(user, cloud_id, machine_id, host, port,
                              key_id=key_id, ssh_user=ssh_user)
     except Exception as exc:
         log.error(exc)
         log.warning("SSH failed when probing, let's see what ping has to say.")
         ret = {}
-    ping_out = ping.stdout.read()
-    ping.wait()
+    if cloud.is_private:
+        ping_out = json.loads(ping.content)
+        ret.update(ping_out)
+    else:
+        ping_out = ping.stdout.read()
+        ping.wait()
+        ret.update(parse_ping(ping_out))
     log.info("ping output: %s" % ping_out)
-    ret.update(parse_ping(ping_out))
     return ret
 
 
-def probe_ssh_only(user, cloud_id, machine_id, host, key_id='', ssh_user='',
-                   shell=None):
+def probe_ssh_only(user, cloud_id, machine_id, host, port, key_id='',
+                   ssh_user='', shell=None):
     """Ping and SSH to machine and collect various metrics."""
 
     # run SSH commands
@@ -3829,9 +3848,10 @@ def probe_ssh_only(user, cloud_id, machine_id, host, key_id='', ssh_user='',
     if key_id:
         log.warn('probing with key %s' % key_id)
 
-    if not shell:
-        cmd_output = ssh_command(user, cloud_id, machine_id,
-                                 host, command, key_id=key_id)
+    if not shell or is_private_subnet(host):
+
+        cmd_output = ssh_command(user, cloud_id, machine_id, host, command,
+                                 key_id=key_id, port=port)
     else:
         retval, cmd_output = shell.command(command)
 
